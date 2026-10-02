@@ -53,6 +53,10 @@ details.card form { display: grid; gap: 10px; margin-top: 10px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .row { display: flex; gap: 8px; justify-content: flex-end; }
 
+.add-for { background: var(--info-bg); color: var(--info); padding: 10px 12px; border-radius: 10px; font-size: 15px; }
+.add-for b { font-size: 18px; display: block; }
+.field { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.btn.small.primary { font-size: 15px; }
 .search input { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
 #results { margin-top: 8px; }
 .banner { padding: 10px 12px; border-radius: 10px; font-weight: 700; }

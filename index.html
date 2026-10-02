@@ -45,6 +45,7 @@
         <details id="add" class="card">
           <summary>+ Add vehicle</summary>
           <form id="add-form" autocomplete="off">
+            <div class="add-for">Adding to: <b id="add-for"></b></div>
             <div class="grid2">
               <input name="stock" placeholder="Stock #" autocapitalize="characters">
               <input name="vin" placeholder="VIN (last 8 or full)" autocapitalize="characters">
@@ -99,6 +100,9 @@
           <input id="edit-ws-part" placeholder="Part #" autocapitalize="characters">
         </div>
       </div>
+      <label id="work-date-row" class="field">Work date (invoice date)
+        <input id="edit-work-date" type="date">
+      </label>
       <input id="edit-note" placeholder="Note / reason">
       <input id="edit-approved-by" placeholder="Approved by (optional)">
       <div class="row">

@@ -25,7 +25,8 @@ const store = {
 let dealers = store.get('dealers', []);
 let dealerId = store.get('dealer', null);
 let recent = store.get('recent', []);        // app-entered rows (lot list + today)
-let outbox = store.get('outbox', []);        // rows waiting to upload
+// changes waiting to upload: {id, op: 'insert' | 'update', data}. Older builds stored bare rows.
+let outbox = store.get('outbox', []).map((o) => (o.op ? o : { id: o.id, op: 'insert', data: o }));
 const index = {};                            // dealerId -> history rows for search
 
 // ---------- pricing (mirrors public.service_lines in the database) ----------
@@ -71,8 +72,10 @@ async function flush() {
   flushing = true;
   try {
     while (outbox.length) {
-      const row = outbox[0];
-      const { error } = await sb.from('vehicles').upsert(row, { onConflict: 'id' });
+      const { id, op, data } = outbox[0];
+      const { error } = op === 'insert'
+        ? await sb.from('vehicles').upsert(data, { onConflict: 'id' })
+        : await sb.from('vehicles').update(data).eq('id', id);
       if (error) { console.warn('sync failed', error); break; }
       outbox.shift(); store.set('outbox', outbox);
     }
@@ -93,15 +96,29 @@ document.addEventListener('visibilitychange', async () => {
 
 const COLS = 'id,dealer_id,stock,vin,year,make,model,color,service_code,ws_price,ws_part,status,status_note,approved_by,notes,found_at,approved_at,done_at,work_date,invoice_id,legacy_invoice_no,source';
 
+// Fields the app may change on an existing vehicle. Only the ones that actually changed are sent,
+// so a stale copy on the phone can't overwrite newer data (dates, invoice links) set elsewhere.
+const EDITABLE = ['dealer_id', 'stock', 'vin', 'year', 'make', 'model', 'color', 'service_code', 'ws_price', 'ws_part',
+  'status', 'status_note', 'approved_by', 'notes', 'approved_at', 'done_at', 'work_date'];
+
 function save(row) {
   row = { ...row };
-  delete row._local;
   const i = recent.findIndex((r) => r.id === row.id);
+  const prev = i >= 0 ? recent[i] : null;
   if (i >= 0) recent[i] = row; else recent.unshift(row);
   store.set('recent', recent);
   const idx = index[row.dealer_id];
   if (idx) { const j = idx.findIndex((r) => r.id === row.id); if (j >= 0) idx[j] = row; else idx.unshift(row); }
-  outbox = outbox.filter((r) => r.id !== row.id).concat(row);
+  const queued = outbox.find((o) => o.id === row.id);
+  if (!prev || queued?.op === 'insert') {
+    outbox = outbox.filter((o) => o.id !== row.id).concat({ id: row.id, op: 'insert', data: row });
+  } else {
+    const patch = {};
+    EDITABLE.forEach((k) => { if ((prev[k] ?? null) !== (row[k] ?? null)) patch[k] = row[k] ?? null; });
+    if (!Object.keys(patch).length) { render(); return; }
+    if (queued) Object.assign(queued.data, patch);
+    else outbox.push({ id: row.id, op: 'update', data: patch });
+  }
   store.set('outbox', outbox);
   render(); flush();
 }
@@ -117,8 +134,13 @@ async function loadRecent() {
     .or(`found_at.gte.${since},status.eq.waiting_inspection,status.eq.approved,done_at.gte.${since}`)
     .order('found_at', { ascending: false }).limit(1000);
   if (error || !data) return;
-  const pending = new Set(outbox.map((r) => r.id));
-  recent = data.filter((r) => !pending.has(r.id)).concat(outbox);
+  // Server rows win, with any not-yet-synced local changes laid on top.
+  const local = new Map(recent.map((r) => [r.id, r]));
+  const server = new Set(data.map((r) => r.id));
+  recent = data.map((r) => {
+    const q = outbox.find((o) => o.id === r.id);
+    return q ? { ...r, ...q.data } : r;
+  }).concat(outbox.filter((o) => o.op === 'insert' && !server.has(o.id)).map((o) => local.get(o.id) || o.data));
   store.set('recent', recent);
 }
 async function loadIndex(id, force = false) {
@@ -206,10 +228,10 @@ function renderSearch() {
   const d = dealer(dealerId);
   if (!hits.length) {
     const note = index[dealerId] ? '' : ' (history not loaded – go online once)';
-    el.innerHTML = `<div class="banner ok">✓ No prior work on ${esc(q)} at ${esc(d?.code || '')}${note}</div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn small" data-prefill="stock">Add as Stock #</button>
-        <button class="btn small" data-prefill="vin">Add as VIN</button></div>`;
+    const best = guessField(q);
+    const btn = (f, label) => `<button class="btn small ${f === best ? 'primary' : ''}" data-prefill="${f}">Add ${esc(q)} as ${label}</button>`;
+    el.innerHTML = `<div class="banner ok">✓ No prior work on ${esc(q)} at ${esc(d?.name || '')}${note}</div>
+      <div class="row" style="margin-top:8px">${best === 'vin' ? btn('vin', 'VIN') + btn('stock', 'Stock #') : btn('stock', 'Stock #') + btn('vin', 'VIN')}</div>`;
     return;
   }
   el.innerHTML = `<div class="banner bad">⚠ ${hits.length} match${hits.length > 1 ? 'es' : ''} at ${esc(d?.code || '')}</div>` +
@@ -218,7 +240,25 @@ function renderSearch() {
       <span class="muted">Stk ${esc(r.stock || '—')} · VIN ${esc(r.vin || '—')} · ${esc(STATUS_LABEL[r.status])}${r.legacy_invoice_no ? ' · Inv ' + esc(r.legacy_invoice_no) : ''}${r.status_note ? ' · ' + esc(r.status_note) : ''}</span>
     </div>`).join('');
 }
-function render() { renderLot(); renderToday(); renderSearch(); setSync(); }
+// Is a search more likely this dealer's stock # or a VIN tail? Compare its letter/digit shape
+// (e.g. "A99999A") with the shapes of this dealer's past stock numbers and VIN endings.
+function guessField(q) {
+  const shape = (s) => s.replace(/[A-Z]/g, 'A').replace(/[0-9]/g, '9');
+  const target = shape(q);
+  let stock = 0, vin = 0;
+  for (const r of index[dealerId] || []) {
+    if (r.stock && shape(norm(r.stock)) === target) stock++;
+    if (r.vin && norm(r.vin).length >= q.length && shape(norm(r.vin).slice(-q.length)) === target) vin++;
+  }
+  if (!stock && !vin) return /[A-Z]/.test(q) ? 'stock' : 'vin';
+  return stock >= vin ? 'stock' : 'vin';
+}
+function render() {
+  const d = dealer(dealerId);
+  $('#add-for').textContent = d?.name || 'pick an account at the top';
+  $('#add > summary').textContent = `+ Add vehicle to ${d?.code || '…'}`;
+  renderLot(); renderToday(); renderSearch(); setSync();
+}
 
 // ---------- service pickers ----------
 function svcPicker(el, onPick) {
@@ -264,6 +304,7 @@ $('#results').addEventListener('click', (e) => {
   const b = e.target.closest('[data-prefill]'); if (!b) return;
   const f = $('#add-form'); f.reset();
   f.elements[b.dataset.prefill].value = norm($('#q').value);
+  render();
   $('#add').open = true;
   f.elements.year.focus();
 });
@@ -291,19 +332,23 @@ function openSheet(id) {
   $('#sheet .ws-fields').classList.toggle('hidden', v.service_code !== 'WS' || locked);
   $('#edit-ws-price').value = v.ws_price ?? ''; $('#edit-ws-part').value = v.ws_part ?? '';
   $('#edit-note').value = v.status_note ?? ''; $('#edit-approved-by').value = v.approved_by ?? '';
+  $('#work-date-row').classList.toggle('hidden', locked || !['approved', 'done'].includes(v.status));
+  $('#edit-work-date').value = v.work_date || today();
   $('#sheet-save').classList.toggle('hidden', locked);
   $('#sheet').showModal();
 }
 function withStatus(v, s) {
   const now = new Date().toISOString();
   v = { ...v, status: s };
-  if (s === 'approved') { v.approved_at = v.approved_at || now; v.done_at = null; v.work_date = null; }
-  else if (s === 'done') { v.approved_at = v.approved_at || now; v.done_at = now; v.work_date = today(); }
+  // A work date that was already set (edited, or carried over) is kept; otherwise Done stamps today.
+  if (s === 'approved') { v.approved_at = v.approved_at || now; v.done_at = null; }
+  else if (s === 'done') { v.approved_at = v.approved_at || now; v.done_at = v.done_at || now; v.work_date = v.work_date || today(); }
   else { v.approved_at = null; v.done_at = null; v.work_date = null; }
   return v;
 }
 function collectEdits(v) {
-  return { ...v, service_code: editSvc,
+  const wd = !$('#work-date-row').classList.contains('hidden') && $('#edit-work-date').value;
+  return { ...v, service_code: editSvc, work_date: wd || v.work_date,
     ws_price: editSvc === 'WS' && $('#edit-ws-price').value ? Number($('#edit-ws-price').value) : null,
     ws_part: editSvc === 'WS' ? $('#edit-ws-part').value.trim() || null : null,
     status_note: $('#edit-note').value.trim() || null, approved_by: $('#edit-approved-by').value.trim() || null };
@@ -324,7 +369,9 @@ document.addEventListener('click', (e) => {
   if (d) {
     e.stopPropagation();
     const v = recent.find((r) => r.id === d.dataset.done);
-    if (v) save(withStatus(v, v.status === 'done' ? 'approved' : 'done'));
+    if (!v) return;
+    if (v.status === 'done' && !confirm(`Undo Done for ${vehTitle(v)}?`)) return;
+    save(withStatus(v, v.status === 'done' ? 'approved' : 'done'));
     return;
   }
   const c = e.target.closest('.veh[data-id]');
