@@ -210,7 +210,7 @@ function vehCard(v, { showDealer = false, doneBtn = false } = {}) {
   return `<div class="veh ${pend ? 'unsynced' : ''}" data-id="${v.id}">
     <span class="code">${esc(v.service_code || '—')}</span>
     <div class="main"><div class="t">${esc(vehTitle(v))}</div><div class="s">${esc(sub)}</div></div>
-    ${btn || `<span class="st ${v.status}">${STATUS_LABEL[v.status]}</span>`}
+    ${btn || (v.invoice_id ? '<span class="st done">Invoiced</span>' : `<span class="st ${v.status}">${STATUS_LABEL[v.status]}</span>`)}
   </div>`;
 }
 function renderLot() {
@@ -221,8 +221,10 @@ function renderLot() {
 }
 function renderToday() {
   const t = today();
-  const rows = recent.filter((v) => v.status === 'approved' ||
-    (v.status === 'done' && (localDate(v.done_at) === t || localDate(v.approved_at) === t)));
+  // Approved work still to do, plus work done with today's work date (not when Done was tapped:
+  // a back-dated job belongs to its own day).
+  const rows = recent.filter((v) => (v.status === 'approved' && !v.invoice_id) ||
+    (v.status === 'done' && (v.work_date || localDate(v.done_at)) === t));
   const by = {};
   rows.forEach((v) => (by[v.dealer_id] ||= []).push(v));
   let total = 0;
