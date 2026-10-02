@@ -82,6 +82,15 @@ window.addEventListener('online', () => { flush(); refresh(); });
 window.addEventListener('offline', setSync);
 setInterval(flush, 30000);
 
+// Coming back to the app (switching from another app, unlocking the phone): pull fresh data
+// so search and lists include anything entered on another device.
+let lastRefresh = 0;
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !started || Date.now() - lastRefresh < 60e3) return;
+  lastRefresh = Date.now();
+  await flush(); await refresh(true);
+});
+
 const COLS = 'id,dealer_id,stock,vin,year,make,model,color,service_code,ws_price,ws_part,status,status_note,approved_by,notes,found_at,approved_at,done_at,work_date,invoice_id,legacy_invoice_no,source';
 
 function save(row) {
@@ -381,6 +390,8 @@ $('#import-file').addEventListener('change', async (e) => {
     if (error) return alert(`Stopped at row ${i}: ${error.message}`);
   }
   toast(`Imported ${rows.length} vehicles`);
+  for (const id of Object.keys(index)) delete index[id];
+  try { Object.keys(localStorage).filter((k) => k.startsWith('idx:')).forEach((k) => localStorage.removeItem(k)); } catch {}
   await refresh(true);
 });
 
