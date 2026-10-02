@@ -1,0 +1,4 @@
+# customer data stays off GitHub
+*.xlsx
+import/
+__pycache__/
