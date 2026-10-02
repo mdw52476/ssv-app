@@ -1,5 +1,5 @@
 // App-shell cache so the app opens with no signal. Supabase API calls always go to the network.
-const CACHE = 'ssv-v4';
+const CACHE = 'ssv-v5';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm'];
 
