@@ -107,6 +107,9 @@ function save(row) {
   const prev = i >= 0 ? recent[i] : null;
   if (i >= 0) recent[i] = row; else recent.unshift(row);
   store.set('recent', recent);
+  if (prev && prev.dealer_id !== row.dealer_id && index[prev.dealer_id]) {
+    index[prev.dealer_id] = index[prev.dealer_id].filter((r) => r.id !== row.id);
+  }
   const idx = index[row.dealer_id];
   if (idx) { const j = idx.findIndex((r) => r.id === row.id); if (j >= 0) idx[j] = row; else idx.unshift(row); }
   const queued = outbox.find((o) => o.id === row.id);
@@ -332,6 +335,10 @@ function openSheet(id) {
   $('#sheet .ws-fields').classList.toggle('hidden', v.service_code !== 'WS' || locked);
   $('#edit-ws-price').value = v.ws_price ?? ''; $('#edit-ws-part').value = v.ws_part ?? '';
   $('#edit-note').value = v.status_note ?? ''; $('#edit-approved-by').value = v.approved_by ?? '';
+  $('#dealer-row').classList.toggle('hidden', locked);
+  $('#edit-dealer').innerHTML = dealers.filter((d) => d.active || d.id === v.dealer_id)
+    .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  $('#edit-dealer').value = v.dealer_id;
   $('#work-date-row').classList.toggle('hidden', locked || !['approved', 'done'].includes(v.status));
   $('#edit-work-date').value = v.work_date || today();
   $('#sheet-save').classList.toggle('hidden', locked);
@@ -348,7 +355,8 @@ function withStatus(v, s) {
 }
 function collectEdits(v) {
   const wd = !$('#work-date-row').classList.contains('hidden') && $('#edit-work-date').value;
-  return { ...v, service_code: editSvc, work_date: wd || v.work_date,
+  const newDealer = !$('#dealer-row').classList.contains('hidden') && $('#edit-dealer').value;
+  return { ...v, dealer_id: newDealer || v.dealer_id, service_code: editSvc, work_date: wd || v.work_date,
     ws_price: editSvc === 'WS' && $('#edit-ws-price').value ? Number($('#edit-ws-price').value) : null,
     ws_part: editSvc === 'WS' ? $('#edit-ws-part').value.trim() || null : null,
     status_note: $('#edit-note').value.trim() || null, approved_by: $('#edit-approved-by').value.trim() || null };
@@ -360,7 +368,11 @@ $('#sheet-actions').addEventListener('click', (e) => {
   $('#sheet').close(); toast(STATUS_LABEL[b.dataset.status]);
 });
 $('#sheet').addEventListener('close', () => {
-  if ($('#sheet').returnValue === 'save' && editing) { save(collectEdits(editing)); toast('Saved'); }
+  if ($('#sheet').returnValue === 'save' && editing) {
+    const next = collectEdits(editing);
+    save(next);
+    toast(next.dealer_id !== editing.dealer_id ? `Moved to ${dealer(next.dealer_id)?.name || 'other account'}` : 'Saved');
+  }
   editing = null; $('#sheet').returnValue = '';
 });
 
