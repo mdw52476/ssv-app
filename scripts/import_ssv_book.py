@@ -17,6 +17,8 @@ import openpyxl
 
 SKIP_TABS = {'WSs', 'WSs OLD', 'WSs Archive 2023'}
 ACTIVE = {'MRS', 'SJD', 'DM', 'H', 'DayG', 'SG'}
+# Dealers billed on grouped invoices: only the first row of a group carries the invoice #.
+GROUPED = {'H', 'DM', 'K'}
 PLACEHOLDERS = {'stk#', '//', 'vin#', 'stk #', 'vin #'}
 DATE_RE = re.compile(r'^\s*(\d{1,2})/(\d{1,2})/(\d{2,4})\s*$')
 
@@ -46,7 +48,10 @@ def as_date(v):
 
 
 def is_dealer_tab(ws):
-    hdr = [str(c.value or '').strip().lower() for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    first = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+    if not first:
+        return False
+    hdr = [str(v or '').strip().lower() for v in first]
     return len(hdr) > 11 and hdr[3] == 'stk #' and hdr[11] == 'vin #'
 
 
@@ -97,6 +102,11 @@ def parse(path):
                 'notes': notes, 'legacy_invoice_no': inv,
                 'found_at': f'{day.isoformat()}T12:00:00-04:00', 'work_date': day.isoformat(),
             })
+    # In grouped tabs, un-numbered rows in a date block that has an invoice # were billed on that invoice.
+    billed_days = {(v['dealer_code'], v['work_date']) for v in vehicles if v['legacy_invoice_no']}
+    for v in vehicles:
+        if v['dealer_code'] in GROUPED and v['status'] == 'other' and (v['dealer_code'], v['work_date']) in billed_days:
+            v['status'], v['status_note'] = 'done', 'Imported: on grouped invoice'
     return dealers, vehicles
 
 
