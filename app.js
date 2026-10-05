@@ -169,7 +169,7 @@ async function loadIndex(id, force = false) {
   const rows = [];
   for (let from = 0; ; from += 1000) {
     const { data, error } = await sb.from('vehicles')
-      .select('id,dealer_id,stock,vin,year,make,model,color,service_code,status,status_note,found_at,work_date,legacy_invoice_no,source')
+      .select('id,dealer_id,stock,vin,year,make,model,color,service_code,status,status_note,found_at,work_date,invoice_id,legacy_invoice_no,source')
       .eq('dealer_id', id).order('found_at', { ascending: false }).range(from, from + 999);
     if (error) { console.warn(error); return; }
     rows.push(...data);
@@ -254,13 +254,23 @@ function renderSearch() {
       <div class="row" style="margin-top:8px">${best === 'vin' ? btn('vin', 'VIN') + btn('stock', 'Stock #') : btn('stock', 'Stock #') + btn('vin', 'VIN')}</div>`;
     return;
   }
-  const done = [...new Set(hits.filter((r) => !['wholesale', 'declined', 'voided', 'other'].includes(r.status))
-    .flatMap((r) => parts(r.service_code)))].map((p) => PART_NAME[p] || p);
-  el.innerHTML = `<div class="banner bad">⚠ ${hits.length} match${hits.length > 1 ? 'es' : ''} at ${esc(d?.code || '')}` +
-    (done.length ? `<br><span style="font-weight:600">Already done: ${esc(done.join(', '))} — a different service is OK</span>` : '') + `</div>` +
+  // "Already done" is only work actually done/invoiced; other matches are summarized by their own status.
+  const isDone = (r) => r.status === 'done' || !!r.invoice_id;
+  const svcNames = (rs) => [...new Set(rs.flatMap((r) => parts(r.service_code)))].map((p) => PART_NAME[p] || p).join(', ');
+  const doneHits = hits.filter(isDone);
+  const byStatus = {};
+  hits.filter((r) => !isDone(r)).forEach((r) => (byStatus[r.status] ||= []).push(r));
+  const lines = [];
+  if (doneHits.length) lines.push(`Already done: ${svcNames(doneHits) || 'see below'} — a different service is OK`);
+  Object.entries(byStatus).forEach(([s, rs]) => {
+    const names = svcNames(rs);
+    lines.push(`${STATUS_LABEL[s] || s}${names ? ': ' + names : ''}`);
+  });
+  el.innerHTML = `<div class="banner ${doneHits.length ? 'bad' : 'warn'}">⚠ ${hits.length} match${hits.length > 1 ? 'es' : ''} at ${esc(d?.code || '')}` +
+    lines.map((l) => `<br><span style="font-weight:600">${esc(l)}</span>`).join('') + `</div>` +
     hits.slice(0, 25).map((r) => `<div class="hit">
       <b>${esc(fmtDate(r))}</b> · <b>${esc(r.service_code || '—')}</b> · ${esc(vehTitle(r))} ${esc(r.color || '')}<br>
-      <span class="muted">Stk ${esc(r.stock || '—')} · VIN ${esc(r.vin || '—')} · ${esc(STATUS_LABEL[r.status])}${r.legacy_invoice_no ? ' · Inv ' + esc(r.legacy_invoice_no) : ''}${r.status_note ? ' · ' + esc(r.status_note) : ''}</span>
+      <span class="muted">Stk ${esc(r.stock || '—')} · VIN ${esc(r.vin || '—')} · ${esc(r.invoice_id ? 'Invoiced' : STATUS_LABEL[r.status])}${r.legacy_invoice_no ? ' · Inv ' + esc(r.legacy_invoice_no) : ''}${r.status_note ? ' · ' + esc(r.status_note) : ''}</span>
     </div>`).join('');
 }
 // Is a search more likely this dealer's stock # or a VIN tail? Compare its letter/digit shape
