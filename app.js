@@ -114,7 +114,7 @@ const COLS = 'id,dealer_id,stock,vin,year,make,model,color,service_code,ws_price
 // Fields the app may change on an existing vehicle. Only the ones that actually changed are sent,
 // so a stale copy on the phone can't overwrite newer data (dates, invoice links) set elsewhere.
 const EDITABLE = ['dealer_id', 'stock', 'vin', 'year', 'make', 'model', 'color', 'service_code', 'ws_price', 'ws_part',
-  'status', 'status_note', 'approved_by', 'notes', 'approved_at', 'done_at', 'work_date'];
+  'status', 'status_note', 'approved_by', 'notes', 'found_at', 'approved_at', 'done_at', 'work_date'];
 
 function save(row) {
   row = { ...row };
@@ -448,6 +448,10 @@ async function openSheet(id) {
   $('#sheet .ws-fields').classList.toggle('hidden', v.service_code !== 'WS' || locked);
   $('#edit-ws-price').value = v.ws_price ?? ''; $('#edit-ws-part').value = v.ws_part ?? '';
   $('#edit-note').value = v.status_note ?? ''; $('#edit-approved-by').value = v.approved_by ?? '';
+  $('#info-edit').classList.toggle('hidden', locked);
+  for (const k of ['stock', 'vin', 'year', 'color', 'make', 'model', 'notes']) $('#edit-' + k).value = v[k] ?? '';
+  // Open the info editor straight away when the description is incomplete.
+  $('#info-edit').open = !locked && !(v.year && v.make && v.model);
   $('#dealer-row').classList.toggle('hidden', locked);
   $('#edit-dealer').innerHTML = dealers.filter((d) => d.active || d.id === v.dealer_id)
     .map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
@@ -459,17 +463,28 @@ async function openSheet(id) {
 }
 function withStatus(v, s) {
   const now = new Date().toISOString();
+  const prevStatus = v.status;
   v = { ...v, status: s };
   // A work date that was already set (edited, or carried over) is kept; otherwise Done stamps today.
   if (s === 'approved') { v.approved_at = v.approved_at || now; v.done_at = null; }
   else if (s === 'done') { v.approved_at = v.approved_at || now; v.done_at = v.done_at || now; v.work_date = v.work_date || today(); }
-  else { v.approved_at = null; v.done_at = null; v.work_date = null; }
+  else {
+    v.approved_at = null; v.done_at = null; v.work_date = null;
+    // Back to pending starts it over today, so it returns to the lot list for another 10 hours.
+    if (s === 'found' && prevStatus !== 'found') v.found_at = now;
+  }
   return v;
 }
 function collectEdits(v) {
   const wd = !$('#work-date-row').classList.contains('hidden') && $('#edit-work-date').value;
   const newDealer = !$('#dealer-row').classList.contains('hidden') && $('#edit-dealer').value;
-  return { ...v, dealer_id: newDealer || v.dealer_id, service_code: editSvc, work_date: wd || v.work_date,
+  const info = {};
+  if (!$('#info-edit').classList.contains('hidden')) {
+    const val = (k) => $('#edit-' + k).value.trim() || null;
+    Object.assign(info, { stock: val('stock')?.toUpperCase() ?? null, vin: val('vin')?.toUpperCase() ?? null,
+      year: val('year'), make: val('make'), model: val('model'), color: val('color'), notes: val('notes') });
+  }
+  return { ...v, ...info, dealer_id: newDealer || v.dealer_id, service_code: editSvc, work_date: wd || v.work_date,
     ws_price: editSvc === 'WS' && $('#edit-ws-price').value ? Number($('#edit-ws-price').value) : null,
     ws_part: editSvc === 'WS' ? $('#edit-ws-part').value.trim() || null : null,
     status_note: $('#edit-note').value.trim() || null, approved_by: $('#edit-approved-by').value.trim() || null };

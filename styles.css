@@ -89,6 +89,11 @@ details.card form { display: grid; gap: 10px; margin-top: 10px; }
 .st.wholesale, .st.declined, .st.other, .st.voided { background: var(--bad-bg); color: var(--bad); }
 .unsynced { border-style: dashed; }
 .done-btn { min-width: 64px; }
+#sheet { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.info-edit { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.info-edit > summary { font-weight: 700; color: var(--brand); cursor: pointer; }
+.info-edit[open] > summary { margin-bottom: 8px; }
+.info-edit .grid2 { margin-bottom: 8px; }
 .book-controls { display: grid; gap: 8px; }
 .book-day { font-size: 14px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; display: flex; justify-content: space-between; }
 .inv { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
