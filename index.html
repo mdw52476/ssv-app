@@ -73,6 +73,31 @@
         <div id="lot"></div>
       </section>
 
+      <!-- BOOK: every vehicle for one dealer, like a dealer tab in the old spreadsheet -->
+      <section id="tab-book" class="tab hidden">
+        <div class="card book-controls">
+          <select id="book-dealer" aria-label="Dealer"></select>
+          <div class="grid2">
+            <select id="book-status" aria-label="Status">
+              <option value="all">All statuses</option>
+              <option value="billed">Billed (done)</option>
+              <option value="open">Open (pending / approved / waiting)</option>
+              <option value="notbilled">Not billed (wholesale, declined…)</option>
+            </select>
+            <select id="book-svc" aria-label="Service">
+              <option value="all">All services</option>
+              <option value="C">Chip repair</option>
+              <option value="H">Headlamps</option>
+              <option value="WS">Windshield</option>
+            </select>
+          </div>
+          <input id="book-q" type="search" autocomplete="off" placeholder="Filter: stock, VIN, make, model, color">
+          <div id="book-summary" class="muted"></div>
+        </div>
+        <div id="book"></div>
+        <button id="book-more" class="btn hidden" style="width:100%">Show more</button>
+      </section>
+
       <!-- TODAY -->
       <section id="tab-today" class="tab hidden">
         <div class="list-head"><h2>Approved today</h2><span id="today-total" class="pill"></span></div>
@@ -83,6 +108,7 @@
     <nav class="bottom">
       <button data-tab="lot" class="active">Lot</button>
       <button data-tab="today">Today</button>
+      <button data-tab="book">Book</button>
       <button id="menu-btn">⋯</button>
     </nav>
   </div>

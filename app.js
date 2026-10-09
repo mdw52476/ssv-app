@@ -179,11 +179,19 @@ async function loadIndex(id, force = false) {
   store.set('idx:' + id, rows);
   index[id]._fresh = true;
 }
+let invoiceNo = store.get('invoiceNo', {});   // invoice id -> QuickBooks invoice #
+async function loadInvoices() {
+  const { data, error } = await sb.from('invoices').select('id,doc_number');
+  if (error || !data) return;
+  invoiceNo = Object.fromEntries(data.map((i) => [i.id, i.doc_number]));
+  store.set('invoiceNo', invoiceNo);
+}
 async function refresh(force = false) {
   if (!navigator.onLine) { render(); return; }
-  await Promise.all([loadDealers(), loadRecent()]);
+  await Promise.all([loadDealers(), loadRecent(), loadInvoices()]);
   fillDealers();
   await loadIndex(dealerId, force);
+  if (bookOpen() && bookDealer !== dealerId) await loadIndex(bookDealer, force);
   render(); setSync();
 }
 
@@ -286,11 +294,73 @@ function guessField(q) {
   if (!stock && !vin) return /[A-Z]/.test(q) ? 'stock' : 'vin';
   return stock >= vin ? 'stock' : 'vin';
 }
+// ---------- book: full history for one dealer ----------
+let bookDealer = store.get('bookDealer', null);
+let bookLimit = 150;
+const bookOpen = () => !$('#tab-book').classList.contains('hidden');
+const dayOf = (v) => v.work_date || localDate(v.found_at) || '';
+const BOOK_STATUS = {
+  billed: ['done'], open: ['found', 'approved', 'waiting_inspection'],
+  notbilled: ['wholesale', 'declined', 'other', 'voided'],
+};
+function fillBookDealers() {
+  const sel = $('#book-dealer');
+  const opt = (d) => `<option value="${d.id}">${esc(d.name)}${d.active ? '' : ' (retired)'}</option>`;
+  sel.innerHTML = dealers.filter((d) => d.active).map(opt).join('') +
+    (dealers.some((d) => !d.active) ? '<optgroup label="Retired">' + dealers.filter((d) => !d.active).map(opt).join('') + '</optgroup>' : '');
+  if (!bookDealer || !dealers.some((d) => d.id === bookDealer)) bookDealer = dealerId;
+  sel.value = bookDealer;
+}
+function renderBook() {
+  if (!bookOpen()) return;
+  const el = $('#book');
+  if (!index[bookDealer]) { el.innerHTML = '<div class="empty">Loading…</div>'; $('#book-more').classList.add('hidden'); return; }
+  const pool = new Map(index[bookDealer].map((r) => [r.id, r]));
+  recent.filter((r) => r.dealer_id === bookDealer).forEach((r) => pool.set(r.id, r));
+  const st = $('#book-status').value, svc = $('#book-svc').value, q = norm($('#book-q').value);
+  const rows = [...pool.values()].filter((v) =>
+    (st === 'all' || BOOK_STATUS[st].includes(v.status)) &&
+    (svc === 'all' || parts(v.service_code).includes(svc)) &&
+    (!q || norm([v.stock, v.vin, v.year, v.make, v.model, v.color].join(' ')).includes(q)))
+    .sort((a, b) => dayOf(b).localeCompare(dayOf(a)) || new Date(b.found_at) - new Date(a.found_at));
+  $('#book-summary').textContent = `${rows.length.toLocaleString()} vehicle${rows.length === 1 ? '' : 's'}` +
+    (rows.length > bookLimit ? ` · showing newest ${bookLimit}` : '');
+  let html = '', day = null;
+  const shown = rows.slice(0, bookLimit);
+  shown.forEach((v, i) => {
+    const d = dayOf(v);
+    if (d !== day) {
+      day = d;
+      let n = 0; for (let j = i; j < shown.length && dayOf(shown[j]) === d; j++) n++;
+      html += `<div class="book-day"><span>${d ? fmtDate({ work_date: d }) : 'No date'}</span><span>${n}</span></div>`;
+    }
+    const inv = v.invoice_id ? invoiceNo[v.invoice_id] : v.legacy_invoice_no;
+    const sub = [v.color, v.stock && `Stk ${v.stock}`, v.vin && `VIN …${String(v.vin).slice(-8)}`].filter(Boolean).join(' · ');
+    html += `<div class="veh" data-id="${v.id}">
+      <span class="code">${esc(v.service_code || '—')}</span>
+      <div class="main"><div class="t">${esc(vehTitle(v))}</div><div class="s">${esc(sub)}</div></div>
+      ${inv ? `<span class="inv">Inv ${esc(inv)}</span>` : `<span class="st ${v.status}">${STATUS_LABEL[v.status]}</span>`}
+    </div>`;
+  });
+  el.innerHTML = html || '<div class="empty">No vehicles match.</div>';
+  $('#book-more').classList.toggle('hidden', rows.length <= bookLimit);
+}
+async function showBook() {
+  bookLimit = 150;
+  renderBook();
+  await loadIndex(bookDealer);
+  renderBook();
+}
+$('#book-dealer').addEventListener('change', (e) => { bookDealer = e.target.value; store.set('bookDealer', bookDealer); showBook(); });
+['#book-status', '#book-svc'].forEach((s) => $(s).addEventListener('change', () => { bookLimit = 150; renderBook(); }));
+$('#book-q').addEventListener('input', () => { bookLimit = 150; renderBook(); });
+$('#book-more').addEventListener('click', () => { bookLimit += 300; renderBook(); });
+
 function render() {
   const d = dealer(dealerId);
   $('#add-for').textContent = d?.name || 'pick an account at the top';
   $('#add > summary').textContent = `+ Add vehicle to ${d?.code || '…'}`;
-  renderLot(); renderToday(); renderSearch(); setSync();
+  renderLot(); renderToday(); renderSearch(); renderBook(); setSync();
 }
 
 // ---------- service pickers ----------
@@ -349,8 +419,19 @@ let editing = null, editSvc = null;
 const setEditSvc = svcPicker($('#svc-edit'), (s) => {
   editSvc = s; $('#sheet .ws-fields').classList.toggle('hidden', s !== 'WS');
 });
-function openSheet(id) {
-  const v = recent.find((r) => r.id === id); if (!v) return;
+// Vehicles from the Book aren't in the working set; pull the full record first so edits
+// compare against current data (only changed fields are sent).
+async function openSheet(id) {
+  let v = recent.find((r) => r.id === id);
+  if (!v) {
+    const fromIndex = Object.values(index).flatMap((rows) => rows || []).find((r) => r.id === id);
+    if (navigator.onLine) {
+      const { data } = await sb.from('vehicles').select(COLS).eq('id', id).maybeSingle();
+      v = data || fromIndex;
+    } else v = fromIndex;
+    if (!v) return;
+    recent.push(v); store.set('recent', recent);
+  }
   editing = { ...v }; editSvc = v.service_code;
   $('#sheet-title').textContent = `${vehTitle(v)} ${v.color || ''}`;
   $('#sheet-sub').textContent = [v.stock && `Stk ${v.stock}`, v.vin && `VIN ${v.vin}`, STATUS_LABEL[v.status],
@@ -437,6 +518,7 @@ $('#present-btn').addEventListener('click', () => {
 $$('nav.bottom [data-tab]').forEach((b) => b.addEventListener('click', () => {
   $$('nav.bottom [data-tab]').forEach((x) => x.classList.toggle('active', x === b));
   $$('.tab').forEach((t) => t.classList.toggle('hidden', t.id !== 'tab-' + b.dataset.tab));
+  if (b.dataset.tab === 'book') { fillBookDealers(); showBook(); }
 }));
 $('#dealer').addEventListener('change', async (e) => {
   dealerId = e.target.value; store.set('dealer', dealerId);

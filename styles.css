@@ -89,6 +89,9 @@ details.card form { display: grid; gap: 10px; margin-top: 10px; }
 .st.wholesale, .st.declined, .st.other, .st.voided { background: var(--bad-bg); color: var(--bad); }
 .unsynced { border-style: dashed; }
 .done-btn { min-width: 64px; }
+.book-controls { display: grid; gap: 8px; }
+.book-day { font-size: 14px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; display: flex; justify-content: space-between; }
+.inv { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .dealer-group h3 { font-size: 15px; margin: 16px 0 6px; color: var(--muted); }
 .empty { text-align: center; color: var(--muted); padding: 24px 0; }
 
