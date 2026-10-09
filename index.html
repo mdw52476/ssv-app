@@ -11,6 +11,10 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply the saved theme before first paint so the page doesn't flash the wrong colors.
+    try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+  </script>
 </head>
 <body>
   <div id="login" class="screen hidden">
@@ -168,6 +172,13 @@
   <dialog id="menu">
     <form method="dialog">
       <p id="menu-user" class="muted"></p>
+      <div class="field">Theme
+        <div class="theme-pick" id="theme-pick">
+          <button type="button" data-theme="auto">Auto</button>
+          <button type="button" data-theme="light">Light</button>
+          <button type="button" data-theme="dark">Dark</button>
+        </div>
+      </div>
       <button value="refresh" class="btn">Refresh data</button>
       <button value="import" class="btn ghost">Import history file…</button>
       <button value="signout" class="btn ghost">Sign out</button>

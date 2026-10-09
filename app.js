@@ -594,6 +594,24 @@ $('#import-file').addEventListener('change', async (e) => {
   await refresh(true);
 });
 
+// ---------- theme: auto (follow phone) / light / dark ----------
+function applyTheme(t) {
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  const dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#0b1120' : '#f1f5f9';
+  $$('#theme-pick button').forEach((b) => b.classList.toggle('on', b.dataset.theme === (t || 'auto')));
+}
+let theme = (() => { try { return localStorage.getItem('theme') || 'auto'; } catch { return 'auto'; } })();
+applyTheme(theme);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(theme));
+$('#theme-pick').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-theme]'); if (!b) return;
+  theme = b.dataset.theme;
+  try { if (theme === 'auto') localStorage.removeItem('theme'); else localStorage.setItem('theme', theme); } catch {}
+  applyTheme(theme);
+});
+
 $('#makes').innerHTML = MAKES.map((m) => `<option value="${m}">`).join('');
 $('#colors').innerHTML = COLORS.map((m) => `<option value="${m}">`).join('');
 
