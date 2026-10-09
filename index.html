@@ -37,8 +37,11 @@
       <!-- LOT -->
       <section id="tab-lot" class="tab">
         <div class="card search">
-          <input id="q" type="search" inputmode="text" autocapitalize="characters" autocomplete="off"
-                 placeholder="Stock # or last 5 of VIN">
+          <div class="qwrap">
+            <input id="q" type="search" inputmode="text" autocapitalize="characters" autocomplete="off"
+                   placeholder="Stock # or last 5 of VIN">
+            <button type="button" id="q-clear" class="q-clear hidden" aria-label="Clear search">×</button>
+          </div>
           <div id="results"></div>
         </div>
 

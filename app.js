@@ -247,6 +247,7 @@ function renderToday() {
 function renderSearch() {
   const q = norm($('#q').value);
   const el = $('#results');
+  $('#q-clear').classList.toggle('hidden', !$('#q').value);
   if (q.length < 3) { el.innerHTML = ''; return; }
   const pool = new Map();
   (index[dealerId] || []).forEach((r) => pool.set(r.id, r));
@@ -407,12 +408,22 @@ $('#add-form').addEventListener('submit', (e) => {
 
 $('#results').addEventListener('click', (e) => {
   const b = e.target.closest('[data-prefill]'); if (!b) return;
-  const f = $('#add-form'); f.reset();
+  // Fill just this field so a stock # and a VIN can be added from two separate searches.
+  const f = $('#add-form');
   f.elements[b.dataset.prefill].value = norm($('#q').value);
-  render();
   $('#add').open = true;
-  f.elements.year.focus();
+  toast(`${b.dataset.prefill === 'vin' ? 'VIN' : 'Stock #'} added to the form`);
+  const other = b.dataset.prefill === 'vin' ? 'stock' : 'vin';
+  if (!f.elements[other].value) { clearSearch(); }   // ready for the next lookup
+  else f.elements.year.focus();
 });
+
+function clearSearch() {
+  $('#q').value = '';
+  renderSearch();
+  $('#q').focus();
+}
+$('#q-clear').addEventListener('click', clearSearch);
 
 // ---------- vehicle sheet ----------
 let editing = null, editSvc = null;

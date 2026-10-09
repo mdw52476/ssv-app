@@ -57,6 +57,11 @@ details.card form { display: grid; gap: 10px; margin-top: 10px; }
 .add-for b { font-size: 18px; display: block; }
 .field { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
 .btn.small.primary { font-size: 15px; }
+.qwrap { position: relative; }
+.qwrap input { padding-right: 52px; }
+.qwrap input::-webkit-search-cancel-button { display: none; }
+.q-clear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px;
+  border: 0; border-radius: 50%; background: var(--gray-bg); color: var(--ink); font-size: 24px; line-height: 1; cursor: pointer; }
 .search input { font-size: 20px; font-weight: 700; letter-spacing: .5px; }
 #results { margin-top: 8px; }
 .banner { padding: 10px 12px; border-radius: 10px; font-weight: 700; }
