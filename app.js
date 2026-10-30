@@ -389,9 +389,13 @@ $('#add-form').addEventListener('submit', (e) => {
   if (!addSvc) return toast('Pick a service');
   const stock = g('stock').toUpperCase(), vin = g('vin').toUpperCase();
   const pool = (index[dealerId] || []).concat(recent.filter((r) => r.dealer_id === dealerId));
-  // Only a prior job with overlapping work counts as a repeat; a different service is fine.
+  // Only a prior job with overlapping work counts as a repeat; a different service is fine,
+  // and so is the same service more than 2 years ago (matches v_to_invoice.same_service_history).
+  const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear() - 2);
+  const since = cutoff.toLocaleDateString('en-CA');
   const dup = pool.find((r) => ((stock && norm(r.stock) === norm(stock)) || (vin && norm(r.vin).slice(-8) === norm(vin).slice(-8)))
-    && overlaps(r.service_code, addSvc) && !['wholesale', 'declined', 'voided'].includes(r.status));
+    && overlaps(r.service_code, addSvc) && !['wholesale', 'declined', 'voided'].includes(r.status)
+    && !(dayOf(r) && dayOf(r) <= since));
   if (dup && !confirm(`Same service already in the book: ${fmtDate(dup)} ${dup.service_code || ''} ${vehTitle(dup)} (${STATUS_LABEL[dup.status]}). Add anyway?`)) return;
   save({
     id: crypto.randomUUID(), dealer_id: dealerId, stock: stock || null, vin: vin || null,
